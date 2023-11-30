@@ -1,0 +1,6 @@
+﻿################################################################################
+# This .gitignore file was automatically created by Microsoft(R) Visual Studio.
+################################################################################
+
+/Bongo/bin/Debug/net7.0/appsettings.json
+/Bongo/appsettings.json
