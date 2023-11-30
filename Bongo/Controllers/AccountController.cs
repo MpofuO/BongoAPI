@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
+using System.Text.Json;
 
 namespace Bongo.Controllers
 {
@@ -26,16 +27,16 @@ namespace Bongo.Controllers
         }
 
         [HttpPost("login")]
-        public async Task<IActionResult> Login([FromBody]LoginViewModel model)
+        public async Task<IActionResult> Login([FromBody] LoginViewModel model)
         {
-            BongoUser user = await _userManager.FindByNameAsync(Encryption.Encrypt(model.Username));
+            BongoUser user = await _userManager.FindByEmailAsync(Encryption.Encrypt(model.Email));
             if (user != null)
             {
                 var result = await _signInManager.PasswordSignInAsync(user, model.Password, model.RememberMe, false);
                 if (result.Succeeded)
                 {
-                    string token = GenerateToken(user, model.RememberMe);
-                    return Ok(token);
+                    user.Token = GenerateToken(user, model.RememberMe);
+                    return Ok(user.DecryptUser());
                 }
             }
             return BadRequest("Invalid username or password");
@@ -58,7 +59,6 @@ namespace Bongo.Controllers
             var claims = new[]
             {
             new Claim(JwtRegisteredClaimNames.Sub, user.UserName),
-            new Claim(JwtRegisteredClaimNames.Name, user.UserName),
             new Claim(JwtRegisteredClaimNames.Email, user.Email),
             new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
             // Add any additional claims as needed
@@ -86,7 +86,7 @@ namespace Bongo.Controllers
 
         [HttpPost("register")]
         [AllowAnonymous]
-        public async Task<IActionResult> Register([FromBody]RegisterModel registerModel)
+        public async Task<IActionResult> Register([FromBody] RegisterModel registerModel)
         {
             if (ModelState.IsValid)
             {
@@ -96,7 +96,7 @@ namespace Bongo.Controllers
                 }
                 var user = new BongoUser
                 {
-                    UserName = Encryption.Encrypt(registerModel.UserName.Trim()),
+                    UserName = registerModel.UserName.Trim(),
                     Email = Encryption.Encrypt(registerModel.Email)
                 };
 
@@ -117,7 +117,7 @@ namespace Bongo.Controllers
                     }
                     catch (Exception)
                     {
-                        return StatusCode(500,"Something went wrong while registering your account. It's not you, it's us💀");
+                        return StatusCode(500, "Something went wrong while registering your account. It's not you, it's us💀");
                     }
                 }
 
@@ -128,6 +128,122 @@ namespace Bongo.Controllers
                     return StatusCode(406, ModelState);
                 }
 
+            }
+            return BadRequest();
+        }
+
+        //[HttpGet]
+        //[AllowAnonymous]
+        //public IActionResult ConfirmEmail(string userId, string token)
+        //{
+        //    return View(new ConfirmEmail { UserId = userId, Token = token });
+        //}
+        //[HttpPost]
+        //[AllowAnonymous]
+        //public async Task<IActionResult> ConfirmEmail(ConfirmEmail model)
+        //{
+        //    if (ModelState.IsValid)
+        //    {
+        //        var user = await _userManager.FindByIdAsync(model.UserId);
+        //        if (user != null)
+        //        {
+        //            var result = await _userManager.ConfirmEmailAsync(user, model.Token);
+        //            if (result.Succeeded)
+        //            {
+
+        //            }
+        //            else
+        //            {
+
+        //            }
+        //            TempData["Message"] = "Email verified successfully";
+        //        }
+        //        TempData["Message"] = "Something went wrong😐.";
+
+        //        return RedirectToAction("SignIn");
+        //    }
+        //    return View(model);
+
+        //}
+
+        [HttpGet("VerifyUsername/{username}")]
+        [AllowAnonymous]
+        public async Task<IActionResult> VerifyUsername(string username)
+        {
+            if (ModelState.IsValid)
+            {
+                var user = await _userManager.FindByNameAsync(Encryption.Encrypt(username));
+                if (user != null)
+                    return Ok();
+            }
+            return NotFound();
+        }
+
+        [HttpPost("ForgotPassword")]
+        [AllowAnonymous]
+        public async Task<IActionResult> ForgotPassword([FromBody] AnswerSecurityQuestionViewModel model)
+        {
+            if (ModelState.IsValid)
+            {
+                var user = await _userManager.FindByEmailAsync(Encryption.Encrypt(model.Email));
+                if (user != null)
+                {
+                    if (user.SecurityAnswer.ToLower().Trim() == Encryption.Encrypt(model.SecurityAnswer.ToLower().Trim()))
+                    {
+                        return await ChangePassword(user.Id);
+                    }
+                    return StatusCode(406, $"Incorrect answer. Please try again.");
+                }
+                return NotFound($"Invalid. User with email {model.Email} does not exist");
+            }
+            return BadRequest($"Something went wrong with username {model.Email}. Please try again, if the problem persists contact us.");
+        }
+
+        [HttpGet("ChangePassword")]
+        [AllowAnonymous]
+        public async Task<IActionResult> ChangePassword(string userId)
+        {
+            var user = await _userManager.FindByIdAsync(userId);
+            if (user != null)
+            {
+                var token = await _userManager.GeneratePasswordResetTokenAsync(user);
+                return Ok(token);
+            }
+            return NotFound();
+        }
+        [HttpPost("ResetPassword")]
+        [AllowAnonymous]
+        public async Task<IActionResult> ResetPassword([FromBody]ResetPassword model)
+        {
+            if (ModelState.IsValid)
+            {
+                var user = await _userManager.FindByIdAsync(model.UserId);
+                if (user != null)
+                {
+                    var result = await _userManager.ResetPasswordAsync(user, model.Token, model.ConfirmPassword);
+                    if (result.Succeeded)
+                    {
+                        return Ok();
+                    }
+                    foreach (var error in result.Errors)
+                        ModelState.AddModelError("", error.Description);
+                }
+            }
+            return BadRequest(ModelState);
+        }
+
+        [HttpPost("UpdateSecurityQuestion")]
+        [AllowAnonymous]
+        public async Task<IActionResult> UpdateSecurityQuestion([FromBody]SecurityQuestionViewModel model)
+        {
+            if (ModelState.IsValid)
+            {
+                var user = await _userManager.FindByNameAsync(Encryption.Encrypt(model.UserName));
+                user.SecurityQuestion = Encryption.Encrypt(model.SecurityQuestion);
+                user.SecurityAnswer = Encryption.Encrypt(model.SecurityAnswer);
+                await _userManager.UpdateAsync(user);
+
+                return Ok();
             }
             return BadRequest();
         }
