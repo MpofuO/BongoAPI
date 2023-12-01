@@ -224,7 +224,7 @@ namespace Bongo.Controllers
         /// <param name="model"></param>
         /// <returns>
         /// <list type="string">
-        /// <item>StatusCode 200 with the reset passwprd token if the token was successfully created.</item>
+        /// <item>StatusCode 200 with the an array containing the reset password token and the userId respectively if the token was successfully created.</item>
         /// <item>StatusCode 400 if the model was not valid.</item>
         /// <item>StatusCode 404 if user with the given email does not exist.</item>
         /// <item>StatusCode 406 if the given answer to the security question is incorrect.</item>
@@ -256,7 +256,7 @@ namespace Bongo.Controllers
         /// <param name="model"></param>
         /// <returns>
         /// <list type="string">
-        /// <item>StatusCode 200 with the reset passwprd token if the token was successfully created.</item>
+        /// <item>StatusCode 200 with the an array containing the reset password token and the userId respectively if the token was successfully created.</item>
         /// <item>StatusCode 400 if the request is potentially an attempt wrongfully reset a user's password.</item>
         /// <item>StatusCode 404 if the given userId matches no user.</item>
         /// </list>
@@ -273,7 +273,7 @@ namespace Bongo.Controllers
                     return BadRequest();
 
                 var token = await _userManager.GeneratePasswordResetTokenAsync(user);
-                return Ok(token);
+                return Ok(new string[] { token, user.Id });
             }
             return NotFound();
         }
