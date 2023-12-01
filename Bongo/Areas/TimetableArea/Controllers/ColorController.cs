@@ -1,12 +1,6 @@
-﻿using Bongo.Areas.TimetableArea.Infrastructure;
-using Bongo.Areas.TimetableArea.Models;
-using Bongo.Data;
-using Bongo.Models;
+﻿using Bongo.Data;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
-using System;
 
 namespace Bongo.Areas.TimetableArea.Controllers
 {

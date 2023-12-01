@@ -106,7 +106,7 @@ namespace Bongo.Controllers
                 {
                     try
                     {
-                        //var token = await _userManager.GeneratePasswordResetTokenAsync(user);
+                        //var token = await userManager.GeneratePasswordResetTokenAsync(user);
                         /* Dictionary<string, string> emailOptions = new Dictionary<string, string>
                          { { "username", user.UserName},
                            { "link",_config.GetValue<string>("Application:AppDomain") + $"Account/ConfirmEmail?userId={user.Id}&token{token}" }
@@ -144,10 +144,10 @@ namespace Bongo.Controllers
         //{
         //    if (ModelState.IsValid)
         //    {
-        //        var user = await _userManager.FindByIdAsync(model.UserId);
+        //        var user = await userManager.FindByIdAsync(model.UserId);
         //        if (user != null)
         //        {
-        //            var result = await _userManager.ConfirmEmailAsync(user, model.Token);
+        //            var result = await userManager.ConfirmEmailAsync(user, model.Token);
         //            if (result.Succeeded)
         //            {
 
@@ -199,7 +199,7 @@ namespace Bongo.Controllers
             return BadRequest($"Something went wrong with username {model.Email}. Please try again, if the problem persists contact us.");
         }
 
-        [HttpGet("ChangePassword")]
+        [HttpGet("ChangePassword/{userId}")]
         [AllowAnonymous]
         public async Task<IActionResult> ChangePassword(string userId)
         {
