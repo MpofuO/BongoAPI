@@ -26,6 +26,16 @@ namespace Bongo.Controllers
             _config = configuration;
         }
 
+        /// <summary>
+        /// Logs the user in
+        /// </summary>
+        /// <param name="model"></param>
+        /// <returns>
+        /// <list type="string">
+        /// <item>StatusCode 200 with the user object if the user is successfully authenticated.</item>
+        /// <item> StatusCode 400 otherwise</item>
+        /// </list>
+        /// </returns>
         [HttpPost("login")]
         public async Task<IActionResult> Login([FromBody] LoginViewModel model)
         {
@@ -39,8 +49,18 @@ namespace Bongo.Controllers
                     return Ok(user.DecryptUser());
                 }
             }
-            return BadRequest("Invalid username or password");
+            return BadRequest("Invalid email or password");
         }
+
+        /// <summary>
+        /// Logs the user out
+        /// </summary>
+        /// <param name="model"></param>
+        /// <returns>
+        /// <list type="string">
+        /// <item>StatusCode 204.</item>
+        /// </list>
+        /// </returns>
         [Authorize]
         [HttpGet("logout")]
         public async Task<IActionResult> Logout()
@@ -84,6 +104,19 @@ namespace Bongo.Controllers
             return tokenString;
         }
 
+        /// <summary>
+        /// Registers a user
+        /// </summary>
+        /// <param name="model"></param>
+        /// <returns>
+        /// <list type="string">
+        /// <item>StatusCode 200 if the user is successfully registered.</item>
+        /// <item>StatusCode 409 if there was a email conflict.</item>
+        /// <item>StatusCode 406 with an IEnumerable object of IdentityError if registration failed at user creation.</item>
+        /// <item>StatusCode 400 if the model was not valid.</item>
+        /// <item>StatusCode 500 if there was a server error.</item>
+        /// </list>
+        /// </returns>
         [HttpPost("register")]
         [AllowAnonymous]
         public async Task<IActionResult> Register([FromBody] RegisterModel registerModel)
@@ -92,7 +125,7 @@ namespace Bongo.Controllers
             {
                 if (await _userManager.FindByNameAsync(Encryption.Encrypt(registerModel.UserName.Trim())) != null)
                 {
-                    return StatusCode(409, "Username already exists. Please use a different username.");
+                    return StatusCode(409, "Username already exists. Please use a different email.");
                 }
                 var user = new BongoUser
                 {
@@ -108,24 +141,21 @@ namespace Bongo.Controllers
                     {
                         //var token = await userManager.GeneratePasswordResetTokenAsync(user);
                         /* Dictionary<string, string> emailOptions = new Dictionary<string, string>
-                         { { "username", user.UserName},
+                         { { "email", user.UserName},
                            { "link",_config.GetValue<string>("Application:AppDomain") + $"Account/ConfirmEmail?userId={user.Id}&token{token}" }
                          };
  */
                         //await _mailSender.SendMailAsync(registerModel.Email, "Welcome to Bongo", "WelcomeEmail", emailOptions);
-                        return StatusCode(201);
+                        return Ok();
                     }
                     catch (Exception)
                     {
                         return StatusCode(500, "Something went wrong while registering your account. It's not you, it's us💀");
                     }
                 }
-
                 else
                 {
-                    foreach (var error in result.Errors)
-                        ModelState.AddModelError("", error.Description);
-                    return StatusCode(406, ModelState);
+                    return StatusCode(406, result.Errors);
                 }
 
             }
@@ -166,19 +196,40 @@ namespace Bongo.Controllers
 
         //}
 
-        [HttpGet("VerifyUsername/{username}")]
+        /// <summary>
+        /// Verifies if a user with the given email exists
+        /// </summary>
+        /// <param name="model"></param>
+        /// <returns>
+        /// <list type="string">
+        /// <item>StatusCode 200 if the user exists, 404 otherwise.</item>
+        /// </list>
+        /// </returns>
+        [HttpGet("VerifyEmail/{email}")]
         [AllowAnonymous]
-        public async Task<IActionResult> VerifyUsername(string username)
+        public async Task<IActionResult> VerifyEmail(string email)
         {
             if (ModelState.IsValid)
             {
-                var user = await _userManager.FindByNameAsync(Encryption.Encrypt(username));
+                var user = await _userManager.FindByEmailAsync(Encryption.Encrypt(email));
                 if (user != null)
                     return Ok();
             }
             return NotFound();
         }
 
+        /// <summary>
+        /// Initiates a password reset for a user once the user's answer to security question is validated.
+        /// </summary>
+        /// <param name="model"></param>
+        /// <returns>
+        /// <list type="string">
+        /// <item>StatusCode 200 with the reset passwprd token if the token was successfully created.</item>
+        /// <item>StatusCode 400 if the model was not valid.</item>
+        /// <item>StatusCode 404 if user with the given email does not exist.</item>
+        /// <item>StatusCode 406 if the given answer to the security question is incorrect.</item>
+        /// </list>
+        /// </returns>
         [HttpPost("ForgotPassword")]
         [AllowAnonymous]
         public async Task<IActionResult> ForgotPassword([FromBody] AnswerSecurityQuestionViewModel model)
@@ -190,30 +241,58 @@ namespace Bongo.Controllers
                 {
                     if (user.SecurityAnswer.ToLower().Trim() == Encryption.Encrypt(model.SecurityAnswer.ToLower().Trim()))
                     {
-                        return await ChangePassword(user.Id);
+                        return await ChangePassword(user.Id, true, model.SecurityAnswer);
                     }
                     return StatusCode(406, $"Incorrect answer. Please try again.");
                 }
                 return NotFound($"Invalid. User with email {model.Email} does not exist");
             }
-            return BadRequest($"Something went wrong with username {model.Email}. Please try again, if the problem persists contact us.");
+            return BadRequest($"Something went wrong with email {model.Email}. Please try again, if the problem persists contact us.");
         }
 
+        /// <summary>
+        /// Initiates a change password event by creating a password reset token
+        /// </summary>
+        /// <param name="model"></param>
+        /// <returns>
+        /// <list type="string">
+        /// <item>StatusCode 200 with the reset passwprd token if the token was successfully created.</item>
+        /// <item>StatusCode 400 if the request is potentially an attempt wrongfully reset a user's password.</item>
+        /// <item>StatusCode 404 if the given userId matches no user.</item>
+        /// </list>
+        /// </returns>
         [HttpGet("ChangePassword/{userId}")]
         [AllowAnonymous]
-        public async Task<IActionResult> ChangePassword(string userId)
+        public async Task<IActionResult> ChangePassword(string userId, bool fromForgot = false, string secAnswer = "")
         {
             var user = await _userManager.FindByIdAsync(userId);
             if (user != null)
             {
+
+                if (!(fromForgot && user.SecurityAnswer == Encryption.Encrypt(secAnswer)))
+                    return BadRequest();
+
                 var token = await _userManager.GeneratePasswordResetTokenAsync(user);
                 return Ok(token);
             }
             return NotFound();
         }
+
+        /// <summary>
+        /// Resets a user's password.
+        /// </summary>
+        /// <param name="model"></param>
+        /// <returns>
+        /// <list type="string">
+        /// <item>StatusCode 200 if the password was successfully reset.</item>
+        /// <item>StatusCode 406 with an IEnumerable object of IdentityError if resetting the password failed.</item>
+        /// <item>StatusCode 400 if model was not valid.</item>
+        /// <item>StatusCode 404 if the given userId matches no user.</item>
+        /// </list>
+        /// </returns>
         [HttpPost("ResetPassword")]
         [AllowAnonymous]
-        public async Task<IActionResult> ResetPassword([FromBody]ResetPassword model)
+        public async Task<IActionResult> ResetPassword([FromBody] ResetPassword model)
         {
             if (ModelState.IsValid)
             {
@@ -225,20 +304,34 @@ namespace Bongo.Controllers
                     {
                         return Ok();
                     }
-                    foreach (var error in result.Errors)
-                        ModelState.AddModelError("", error.Description);
+                    return StatusCode(406, result.Errors);
                 }
+                else
+                    return NotFound();
             }
-            return BadRequest(ModelState);
+            return BadRequest();
         }
 
+        /// <summary>
+        /// Updates a user's security question and it's answer.
+        /// </summary>
+        /// <param name="model"></param>
+        /// <returns>
+        /// <list type="string">
+        /// <item>StatusCode 200 if the security question and answer were successfully set.</item>
+        /// <item>StatusCode 400 if model was not valid.</item>
+        /// <item>StatusCode 404 if the given userId matches no user.</item>
+        /// </list>
+        /// </returns>
         [HttpPost("UpdateSecurityQuestion")]
-        [AllowAnonymous]
-        public async Task<IActionResult> UpdateSecurityQuestion([FromBody]SecurityQuestionViewModel model)
+        public async Task<IActionResult> UpdateSecurityQuestion([FromBody] SecurityQuestionViewModel model)
         {
             if (ModelState.IsValid)
             {
-                var user = await _userManager.FindByNameAsync(Encryption.Encrypt(model.UserName));
+                var user = await _userManager.FindByNameAsync(User.Identity.Name);
+                if (user is null)
+                    return NotFound();
+
                 user.SecurityQuestion = Encryption.Encrypt(model.SecurityQuestion);
                 user.SecurityAnswer = Encryption.Encrypt(model.SecurityAnswer);
                 await _userManager.UpdateAsync(user);
